@@ -1,0 +1,8 @@
+[project]
+name = "nightwatch-ai"
+version = "0.1.0"
+description = "Night-shift vitals monitoring and doctor summaries for elderly care"
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+where = ["src"]
