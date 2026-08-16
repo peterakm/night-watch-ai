@@ -8,20 +8,17 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import os
-import sys
 from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 # Must run before importing nightwatch.summarize, which reads
-# NIGHTWATCH_PROVIDER / NIGHTWATCH_MODEL from the environment at import time.
+# NIGHTWATCH_MODEL from the environment at import time.
 load_dotenv()
 
 from nightwatch import data as nwdata
 from nightwatch import scoring
-from nightwatch import summarize as nwsummarize
 from nightwatch.summarize import DEFAULT_MODEL, build_patient_context, summarize_patient
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -36,28 +33,17 @@ def _load_active_baselines():
     return nwdata.DEFAULT_ELDERLY_BASELINES["vitals"]
 
 
-def run_demo(num_patients: int, hours: float, model: str, provider: str):
-    if provider == "anthropic" and not os.environ.get("ANTHROPIC_API_KEY"):
-        print(
-            "ANTHROPIC_API_KEY is not set. Copy .env.example to .env and add your key, "
-            "or set NIGHTWATCH_PROVIDER=ollama to use a local model instead.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    if provider not in ("anthropic", "ollama"):
-        print(f"Unknown NIGHTWATCH_PROVIDER={provider!r} (expected 'anthropic' or 'ollama')", file=sys.stderr)
-        sys.exit(1)
-
+def run_demo(num_patients: int, hours: float, model: str):
     population_baseline = _load_active_baselines()
 
     patients, vitals_df = nwdata.generate_synthetic_night(num_patients=num_patients, hours=hours)
-    print(f"Provider: {provider} · Model: {model}")
+    print(f"Model: {model}")
     print(f"Generated {len(vitals_df)} readings across {len(patients)} patients "
           f"over a {hours:.0f}-hour shift.\n")
 
     report_lines = [
         f"# Night Watch AI — Shift Summary",
-        f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')} · Provider: {provider} · Model: {model}",
+        f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')} · Model: {model}",
         "",
         "> AI-generated decision-support summary. Not a diagnosis. Verify any "
         "flagged patient in person before acting.",
@@ -94,7 +80,7 @@ def run_demo(num_patients: int, hours: float, model: str, provider: str):
                 "compared against elderly population norms instead."
             )
 
-        result = summarize_patient(context, model=model, provider=provider)
+        result = summarize_patient(context, model=model)
 
         header = f"## Room {patient.room} — {patient.name} (age {patient.age}) — {vital_score.risk_band.upper()}"
         print(header)
@@ -129,10 +115,7 @@ def main():
     demo_parser = subparsers.add_parser("demo", help="Run a synthetic overnight shift demo")
     demo_parser.add_argument("--patients", type=int, default=5)
     demo_parser.add_argument("--hours", type=float, default=9.0)  # 11pm - 8am
-    demo_parser.add_argument(
-        "--provider", type=str, default=nwsummarize.PROVIDER, choices=["anthropic", "ollama"]
-    )
-    demo_parser.add_argument("--model", type=str, default=None, help="Defaults to the provider's default model")
+    demo_parser.add_argument("--model", type=str, default=None, help="Defaults to DEFAULT_MODEL (Ollama)")
 
     calibrate_parser = subparsers.add_parser(
         "calibrate", help="Compute elderly population baselines from a real Kaggle CSV"
@@ -142,8 +125,8 @@ def main():
     args = parser.parse_args()
 
     if args.command == "demo":
-        model = args.model or nwsummarize.DEFAULT_MODELS.get(args.provider, DEFAULT_MODEL)
-        run_demo(num_patients=args.patients, hours=args.hours, model=model, provider=args.provider)
+        model = args.model or DEFAULT_MODEL
+        run_demo(num_patients=args.patients, hours=args.hours, model=model)
     elif args.command == "calibrate":
         run_calibrate(args.csv)
 

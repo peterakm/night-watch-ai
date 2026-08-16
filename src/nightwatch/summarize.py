@@ -15,13 +15,9 @@ import json
 import os
 from dataclasses import dataclass
 
-PROVIDER = os.environ.get("NIGHTWATCH_PROVIDER", "ollama").strip().lower()
+PROVIDER = "ollama"
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
-
-DEFAULT_MODELS = {
-    "ollama": "qwen2.5:7b",
-}
-DEFAULT_MODEL = os.environ.get("NIGHTWATCH_MODEL", DEFAULT_MODELS.get(PROVIDER, "claude-sonnet-5"))
+DEFAULT_MODEL = os.environ.get("NIGHTWATCH_MODEL", "qwen2.5:7b")
 
 SUMMARY_SYSTEM_PROMPT = """\
 You are Night Watch AI, a clinical decision-support assistant that helps a \
@@ -127,33 +123,6 @@ def build_patient_context(
     return context
 
 
-def _call_anthropic(system_prompt: str, context: dict, model: str, max_tokens: int):
-    import anthropic
-
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model=model,
-        max_tokens=max_tokens,
-        system=[
-            {
-                "type": "text",
-                "text": system_prompt,
-                "cache_control": {"type": "ephemeral"},
-            }
-        ],
-        messages=[{"role": "user", "content": json.dumps(context, indent=2)}],
-    )
-    text = "".join(block.text for block in response.content if block.type == "text")
-    return SummaryResult(
-        patient_id=context["patient_id"],
-        text=text.strip(),
-        model=response.model,
-        input_tokens=response.usage.input_tokens,
-        output_tokens=response.usage.output_tokens,
-        cache_read_tokens=response.usage.cache_read_input_tokens or 0,
-    )
-
-
 def _call_ollama(system_prompt: str, context: dict, model: str):
     import httpx
 
@@ -186,29 +155,18 @@ def _call_ollama(system_prompt: str, context: dict, model: str):
     )
 
 
-def _call(system_prompt: str, context: dict, model: str, provider: str, max_tokens: int):
-    if provider == "ollama":
-        return _call_ollama(system_prompt, context, model)
-    if provider == "anthropic":
-        return _call_anthropic(system_prompt, context, model, max_tokens)
-    raise ValueError(f"Unknown NIGHTWATCH_PROVIDER: {provider!r} (expected 'anthropic' or 'ollama')")
-
-
-def summarize_patient(context: dict, model: str = DEFAULT_MODEL, provider: str = PROVIDER):
+def summarize_patient(context: dict, model: str = DEFAULT_MODEL):
     """Turn one patient's structured context into a full night-shift summary
-    (3-5 sentences). Used by the CLI's `demo` command.
-
-    provider="anthropic" calls the Claude Messages API (requires
-    ANTHROPIC_API_KEY). provider="ollama" calls a locally running Ollama
-    server instead — free, no API key, lower quality than Claude.
+    (3-5 sentences). Used by the CLI's `demo` command. Calls a locally
+    running Ollama server — free, no API key required.
     """
-    return _call(SUMMARY_SYSTEM_PROMPT, context, model, provider, max_tokens=400)
+    return _call_ollama(SUMMARY_SYSTEM_PROMPT, context, model)
 
 
-def generate_alert(context: dict, model: str = DEFAULT_MODEL, provider: str = PROVIDER):
+def generate_alert(context: dict, model: str = DEFAULT_MODEL):
     """Turn a risk-band escalation into a single urgent alert sentence for
     the dashboard's live notification system. context should include
     "previous_risk_band" (see build_patient_context) so the model can
     reference what changed.
     """
-    return _call(ALERT_SYSTEM_PROMPT, context, model, provider, max_tokens=80)
+    return _call_ollama(ALERT_SYSTEM_PROMPT, context, model)

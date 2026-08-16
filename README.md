@@ -11,7 +11,7 @@ vitals (heart rate, respiratory rate, SpO2, temperature, blood pressure)
 against clinical thresholds and against that patient's own overnight trend.
 The dashboard runs a simulated clock through the shift's readings, and the
 instant any patient's NEWS2-lite risk band gets worse, an LLM (a free local
-model via Ollama by default, or Claude) turns the rule engine's findings into
+model via Ollama) turns the rule engine's findings into
 one short, urgent sentence — not a paragraph the doctor has to stop and read,
 since they can already see the raw numbers. A separate CLI mode is also
 available for generating a full end-of-shift text summary per patient.
@@ -33,7 +33,7 @@ vitals reading → NEWS2-lite rule engine → risk band per patient, every tick
               high-water mark this shift?
                         │ yes
                         ▼
-           LLM writes one urgent sentence (ollama/qwen2.5:7b, free — or Claude)
+           LLM writes one urgent sentence (ollama/qwen2.5:7b, free, local)
                         │
                         ▼
         in-app alert panel + toast + browser push notification + sound
@@ -224,31 +224,21 @@ were out of scope for this prototype's same-day setup.
 
 ## Model choice
 
-Two backends are supported, set via `NIGHTWATCH_PROVIDER` in `.env` or
-`--provider` on the CLI:
+Runs entirely on a locally-run open model via [Ollama](https://ollama.com) —
+free, no API key, no per-call cost, everything stays on your own machine.
+Defaults to `qwen2.5:7b`. Requires `ollama serve` running locally with the
+model pulled (`ollama pull qwen2.5:7b`). It's noticeably less nuanced than a
+larger hosted model for this kind of clinical writing — it occasionally
+comments on a borderline reading the rule engine didn't actually flag
+(subscore < 2) rather than sticking strictly to the given flags. Review its
+summaries more carefully, especially anything it says beyond the listed
+flags.
 
-- **`ollama`** (default) — a locally-run open model via
-  [Ollama](https://ollama.com), entirely free, no API key, runs on your own
-  machine. Defaults to `qwen2.5:7b`. Requires `ollama serve` running locally
-  with the model pulled (`ollama pull qwen2.5:7b`). Noticeably less nuanced
-  than Claude for this kind of clinical writing — it occasionally comments
-  on a borderline reading the rule engine didn't actually flag (subscore < 2)
-  rather than sticking strictly to the given flags. Review its summaries
-  more carefully, especially anything it says beyond the listed flags.
-
-- **`anthropic`** — Claude via the Anthropic API. Better clinical-writing
-  quality and more disciplined about sticking to the given findings; has a
-  small per-call cost. Defaults to `claude-sonnet-5`. Override the model
-  with `NIGHTWATCH_MODEL` / `--model`:
-  - `claude-haiku-4-5` — cheapest, for very high patient volumes
-  - `claude-opus-5` — most careful reasoning, for the highest-stakes deployments
-
-  The system prompt is sent with prompt caching enabled, so running the demo
-  across many patients in one shift only pays full price for the first call.
+Override the model with `NIGHTWATCH_MODEL` in `.env` or `--model` on the CLI:
 
 ```bash
-python -m nightwatch.cli demo               # ollama, free, default
-python -m nightwatch.cli demo --provider anthropic --model claude-sonnet-5
+python -m nightwatch.cli demo                        # qwen2.5:7b, default
+python -m nightwatch.cli demo --model llama3.1:8b     # any other pulled Ollama model
 ```
 
 ## Project layout
@@ -257,7 +247,7 @@ python -m nightwatch.cli demo --provider anthropic --model claude-sonnet-5
 src/nightwatch/
   data.py         # Kaggle loader, population baselines, synthetic generator
   scoring.py      # NEWS2-lite rule engine + personal-trend detection
-  summarize.py    # LLM calls (Ollama/Claude): full summary + short alert line
+  summarize.py    # LLM calls (Ollama): full summary + short alert line
   cli.py          # `demo` and `calibrate` commands
   api.py          # FastAPI backend: simulated clock, escalation detection,
                    # alert generation, in-memory shift state
